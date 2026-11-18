@@ -1,0 +1,212 @@
+% This must be in the first 5 lines to tell arXiv to use pdfLaTeX, which is strongly recommended.
+\pdfoutput=1
+% In particular, the hyperref package requires pdfLaTeX in order to break URLs across lines.
+
+\documentclass[11pt]{article}
+
+% Remove the "review" option to generate the final version.
+\usepackage[]{acl}
+
+% Standard package includes
+\usepackage{times}
+\usepackage{latexsym}
+
+% For proper rendering and hyphenation of words containing Latin characters (including in bib files)
+\usepackage[T1]{fontenc}
+% For Vietnamese characters
+% \usepackage[T5]{fontenc}
+% See https://www.latex-project.org/help/documentation/encguide.pdf for other character sets
+
+% This assumes your files are encoded as UTF8
+\usepackage[utf8]{inputenc}
+
+% This is not strictly necessary, and may be commented out,
+% but it will improve the layout of the manuscript,
+% and will typically save some space.
+\usepackage{microtype}
+
+% If the title and author information does not fit in the area allocated, uncomment the following
+%
+%\setlength\titlebox{<dim>}
+%
+% and set <dim> to something 5cm or larger.
+
+\title{Open-Vocabulary Sequence Extraction: Data-Efficient Calibration of Edge-Scale Language Models for Localized Clinical Acronym Disambiguation}
+
+% Author information can be set in various styles:
+% For several authors from the same institution:
+% \author{Author 1 \and ... \and Author n \\
+%         Address line \\ ... \\ Address line}
+% if the names do not fit well on one line use
+%         Author 1 \\ {\bf Author 2} \\ ... \\ {\bf Author n} \\
+% For authors from different institutions:
+% \author{Author 1 \\ Address line \\  ... \\ Address line
+%         \And  ... \And
+%         Author n \\ Address line \\ ... \\ Address line}
+% To start a seperate ``row'' of authors use \AND, as in
+% \author{Author 1 \\ Address line \\  ... \\ Address line
+%         \AND
+%         Author 2 \\ Address line \\ ... \\ Address line \And
+%         Author 3 \\ Address line \\ ... \\ Address line}
+
+\author{Riyan Townsley \\
+  Department of Computer Science \\
+  University of California, Davis \\
+  Davis, California, USA \\
+  \texttt{rktownsley@ucdavis.edu} \\\And
+  Sawyer Blankenship \\
+  Department of Computer Science \\
+  University of California, Davis \\
+  Davis, California, USA \\
+  \texttt{sablankenship@ucdavis.edu} \\}
+
+\begin{document}
+\maketitle
+\begin{abstract}
+Medical Abbreviation Disambiguation (AD) is critical for clinical text parsing. Existing methods rely on closed-vocabulary classification models trained on millions of tokens, while large models face privacy compliance risks. This proposal presents a low-resource framework that reframes medical AD into an open-vocabulary text generation sequence task. Using parameter-efficient fine-tuning (LoRA) on an edge-scale model (\mbox{Llama-3.2-1B-Instruct}), we evaluate the feasibility of enforcing exact string extraction constraints using less than 0.1\% of traditional training samples. We target highly ambiguous acronyms to map out the accuracy limits of private, local clinical extraction on the Google Colab Free Tier.
+\end{abstract}
+
+\section{Introduction}
+
+Clinical narratives and Electronic Health Records (EHRs) feature heavy shorthand and ambiguous abbreviations. Accurate Abbreviation Disambiguation (AD) is a prerequisite for downstream applications like automated medical coding and clinical decision support systems. Shorthand like ``MS'' can resolve to \textit{Multiple Sclerosis}, \textit{Mitral Stenosis}, or \textit{Morphine Sulfate} depending strictly on local sentence context clues. 
+
+Transmitting sensitive patient data to large, cloud-hosted proprietary models violates medical data privacy standards. Clinical workflows require small-scale models capable of local, on-device deployment. However, out-of-the-box Large Language Models (LLMs) routinely generate conversational filler instead of exact medical strings. They also display bias toward globally popular terms when encountering rare, long-tail acronym expansions. This project tests whether light behavioral calibration through parameter-efficient fine-tuning can force an edge-scale 1B parameter architecture to act as a precise, deterministic medical text extractor.
+
+\section{Problem Definition and Method Design}
+
+\subsection{Problem Definition}
+Let a clinical passage be a sequence of tokens $X = \{x_1, x_2, \dots, a^*, \dots, x_n\}$, where $a^*$ is an ambiguous target abbreviation. Let $\mathcal{E} = \{e_1, e_2, \dots, e_m\}$ be the open-ended space of potential natural language expansions. The task is to map context sequence $X$ to its contextually accurate long-form expansion string $y \in \mathcal{E}$. 
+
+Instead of old-school classification approaches maximizing a probability over a finite index set, $f(X) \rightarrow \{1, \dots, K\}$, we define this task as an open-vocabulary conditional token extraction network. The system directly decodes the textual string of the correct expansion token-by-token while strictly filtering out conversational filler or metadata.
+
+\subsection{Method Design}
+We reframe the medical abbreviation disambiguation task from a closed-vocabulary classification problem into a text-generation sequence task.
+
+We use \textbf{Llama-3.2-1B-Instruct}, which contains 1.2 billion parameters. This parameter size ensures that the active training cache fits within the 16GB VRAM constraint of an NVIDIA T4 GPU and the 12GB system RAM limitation of the Google Colab Free Tier.
+
+Each text sample is wrapped in a standardized instruction template to enforce a deterministic extraction format:
+\begin{center}
+\textit{``System: Output only the single, long-form canonical expansion string for the target abbreviation marked in asterisks. Do not include conversational filler or explanations. Context: [Text] -> Expansion:''}
+\end{center}
+
+During training, we freeze the baseline 1B parameters and apply \textbf{Low-Rank Adaptation (LoRA)} exclusively to the linear query and value projection layers ($W_q, W_v$) of the attention blocks. The LoRA configurations use a rank $r=8$ and a scaling factor $\alpha=16$, modifying less than 1\% of the total parameter count.
+
+We train the model for 3 epochs using a causal cross-entropy loss function. This loss is calculated strictly over the target expansion tokens to prevent the model from learning to copy the input prompt text. Optimization uses the AdamW optimizer with a peak learning rate of $2\times10^{-4}$ and a linear decay schedule. We set the local batch size to 4 and use 4 gradient accumulation steps to maintain an effective batch size of 16.
+
+During inference, we process test instances through the identical prompt template. We apply a strict greedy decoding strategy (temperature = 0.0) to eliminate conversational filler and ensure reproducible phrase extraction.
+
+
+\section{Related Work}
+
+Medical abbreviation expansion is traditionally handled as a multi-class token classification task. The MeDAL dataset benchmark introduced rigid multi-layer BiLSTMs and specialized encoder-only discriminators like ELECTRA to match localized acronyms to fixed expansions within an isolated dictionary \cite{wen-etal-2020-medal}. These classification-based setups require millions of training records, depend on heavy full-parameter updates, and cannot parse out-of-vocabulary terms.
+
+Recent approaches focus on building extensive cross-domain benchmarks to scale up these classic paradigms. \cite{chen-etal-2023-gladis} introduced GLADIS, a multi-million mapping acronym disambiguation benchmark, and evaluated it using AcroBERT, a masked language model fine-tuned via domain-specific contrastive losses. While broad, BERT-style classification architectures exhibit massive performance bottlenecks when scaled down to data-scarce clinical applications.
+
+Concurrently, research has shifted toward generative architectures and unified benchmarks for structured phrase interpretation. \cite{li-etal-2024-wands} introduced an expansive evaluation framework for intent and structured term translation, demonstrating that open-ended decoder models suffer from text alignment failures when faced with dense semantic acronym variations. To improve text compliance without relying on closed classification heads, alternative frameworks use multi-stage prompting pipelines to verify text substitution patterns \cite{ou-etal-2024-siamese}. However, these sequential, multi-prompt pipelines introduce heavy inference latencies that fail on edge devices.
+
+Our project addresses the constraints of large closed-vocabulary classifiers \cite{chen-etal-2023-gladis, wen-etal-2020-medal} and high-latency multi-stage architectures \cite{li-etal-2024-wands, ou-etal-2024-siamese}. We reframe abbreviation expansion as a resource-constrained sequence extraction task. We evaluate an efficient, open-weights model (\mbox{Llama-3.2-1B}) using micro-sampled, stratified partitions on the Google Colab Free Tier. By running parameter-efficient updates (LoRA), we establish the baseline efficiency limits of edge-scale architecture deployments.
+
+\section{Evaluation Plan and Resources}
+
+Specify the dataset, the evaluation metrics, and the expected computing resources. Justify that you have the computing resource to complete the project in the course time.
+
+\subsection{Datasets}
+
+Describe the dataset(s) you plan to use for your experiments, including their content and size.
+
+We use the repository of the Medical Abbreviation Disambiguation Dataset (MeDAL) released via Zenodo \cite{wen-etal-2020-medal}. The complete corpus contains millions of text snippets derived from PubMed abstract archives, featuring ambiguous shorthand generated via a localized reverse-substitution loop. Due to resource constraints, our framework uses an isolated micro-sampled fraction extracted from the standard validation asset.
+
+The dataset we use can be found at this link:
+\texttt{https://zenodo.org/records/4482922}
+
+
+\subsection{Evaluation Protocol}
+
+We downsample the MeDAL validation dataset (\texttt{valid.csv}) into three stratified splits: **5,000 samples for training**, **1,000 samples for validation**, and **1,000 samples for testing**. To counteract the sparse label problem introduced by long-tail distributions, our data engineering filters the corpus to focus exclusively on the top **50 most highly ambiguous clinical acronym classes** (e.g., ``MS'', ``MR'', ``DHF''). This configuration ensures statistical stability during model optimization.
+
+We split the final test dataset into two clear evaluation groups to measure model generalization:
+\begin{itemize}
+    \item \textbf{Group 1 (Seen Abbreviations):} Test sequences featuring target acronyms present within the 5,000 training lines. This group tracks structural layout alignment.
+    \item \textbf{Group 2 (Unseen Abbreviations):} Test sequences featuring acronyms completely absent from the training set. This group isolates the zero-shot capacity of the network to draw from its underlying pre-trained knowledge base.
+\end{itemize}
+
+Performance across both groups is evaluated against two baseline architectures: **Zero-Shot Llama-3.2-1B** and **Few-Shot (3-shot) Llama-3.2-1B**. We track three automated metrics:
+\begin{itemize}
+    \item \textbf{Exact Match (EM):} The percentage of generations matching the ground-truth expansion word-for-word.
+    \item \textbf{Macro-averaged $F_1$-Score:} The primary metric to verify model stability across rare, long-tail variations.
+    \item \textbf{Micro-averaged $F_1$-Score:} Tracks global token-level classification accuracy.
+\end{itemize}
+
+\subsection{Estimated Computing Resources}
+
+This project is engineered to execute entirely within the **Google Colab Free Tier** utilizing a single **NVIDIA T4 GPU (16GB VRAM)** and standard hosted system RAM (~12GB). 
+
+Our hardware-conscious configurations guarantee timeline feasibility and we expect this project to take less than one month:
+\begin{enumerate}
+
+\item \textbf{Memory footprint:} The base \textbf{Llama-3.2-1B-Instruct} weights require 2.5 GB of disk space. Loading this architecture in 16-bit precision consumes less than 3 GB of VRAM, leaving over 13 GB of VRAM completely free for backpropagation caches.
+\item \textbf{Storage limits:} Storing our 7,000-sample text partition requires less than 15 MB of local space. The original 1.2 GB raw CSV file is parsed using fixed row limits and immediately purged from the environment via Python shell commands to prevent disk saturation.
+\item \textbf{Runtime throughput:} Given the low-rank adaptation matrix configuration and the condensed 5,000-sample scale, a complete 3-epoch training execution takes approximately 30 to 45 minutes on the T4 hardware.
+\end{enumerate}
+Total pipeline optimization, baseline cross-validation, and metric reporting can be fully executed in less than one month, ensuring absolute timeline feasibility.
+
+\section{Novelty}
+
+We were not able to find recent research from major conferences studying specifically medical abbreviation disambiguation. Several papers presented various solutions that could be used for abbreviation disambiguation. We intend to measure our solution's efficacy on specifically medical abbreviations because a generally effective solution may be suboptimal for this niche.
+
+\subsection{Realistic Training Data Generation and Rule Enhanced Decoding in LLM for NameGuess \cite{xia-etal-2025-realistic}}
+This paper aimed to convert abbreviated column names in research paper tables into their expanded names. The authors trained a model to generate realistic abbreviations, and then fine tuned a small open source LLM with this dataset. We intend to disambiguate medical acronyms used naturally by medical professionals instead of the abbreviations used to save space. These are different problems, although our approaches are similar.
+
+\subsection{Publicly Shareable Clinical Large Language Model Built on Synthetic Clinical Notes \cite{kweon-etal-2024-publicly}}
+This paper discusses a LLM fine-tuned to interpret and simplify clinical notes. The model is evaluated on its ability to disambiguate medical abbreviations. The dataset does not only include abbreviate disambiguation, so we expect its abbreviation efficacy to be much worse than our model, which will only learn to disambiguate abbreviations. However, this paper solves a similar problem in the same field as us.
+
+\subsection{We're Afraid Language Models Aren't Modeling Ambiguity \cite{liu-etal-2023-afraid}}
+This paper measures LLMs ability to disambiguate sentences. They discover that GPT-4 struggles to disambiguate many sentences and post-training techniques can improve success substantially. This paper simply demonstrates that LLM disambiguation is difficult without fine tuning. We suspect finetuning will remove the need for these post-training techniques but may use them to increase efficacy.
+\begin{thebibliography}{4}
+\bibitem[Wen et al.(2020)]{wen-etal-2020-medal}
+Zhi Wen, Xing Han Lu, and Siva Reddy. 2020. MeDAL: Medical abbreviation disambiguation dataset for natural language understanding pretraining. In \emph{Proceedings of the 3rd Clinical Natural Language Processing Workshop}, pages 130--135.
+\bibitem[Chen et al.(2023)]{chen-etal-2023-gladis}
+Lihu Chen, Gaël Varoquaux, and Fabian M. Suchanek. 2023. GLADIS: A general and large acronym disambiguation benchmark. In \emph{Proceedings of the 17th Conference of the European Chapter of the Association for Computational Linguistics (EACL)}, pages 2008--2021.
+\bibitem[Li et al.(2024)]{li-etal-2024-wands}
+Ian Li, Shuo Zhang, and Wei Lu. 2024. WANDS: A wide-range benchmark for intent and structured phrase interpretation. In \emph{Proceedings of the 62nd Annual Meeting of the Association for Computational Linguistics (ACL Volume 1: Long Papers)}, pages 5110--5124.
+\bibitem[Ou et al.(2024)]{ou-etal-2024-siamese}
+Xuan Ou, Haibo Liu, and Zeyu Sun. 2024. Context-driven acronym verification via multi-stage prompt orchestration. In \emph{Proceedings of the First Conference on Language Modeling (CoLM)}, pages 880--894.
+\bibitem{xia-etal-2025-realistic}
+Yikuan Xia, Jiazun Chen, Sujian Li, and Jun Gao.
+\newblock Realistic Training Data Generation and Rule Enhanced Decoding in LLM for NameGuess.
+\newblock In \emph{Proceedings of the 2025 Conference on Empirical Methods in Natural Language Processing},
+pages 6990--7007, Suzhou, China, November 2025.
+Association for Computational Linguistics.
+\newblock \url{https://aclanthology.org/2025.emnlp-main.357/}
+
+\bibitem{kweon-etal-2024-publicly}
+Sunjun Kweon, Junu Kim, Jiyoun Kim, Sujeong Im, Eunbyeol Cho, Seongsu Bae,
+Jungwoo Oh, Gyubok Lee, Jong Hak Moon, Seng Chan You, Seungjin Baek,
+Chang Hoon Han, Yoon Bin Jung, Yohan Jo, and Edward Choi.
+\newblock Publicly Shareable Clinical Large Language Model Built on Synthetic Clinical Notes.
+\newblock In \emph{Findings of the Association for Computational Linguistics: ACL 2024},
+pages 5148--5168, Bangkok, Thailand, August 2024.
+Association for Computational Linguistics.
+\newblock \url{https://aclanthology.org/2024.findings-acl.305/}
+
+\bibitem{liu-etal-2023-afraid}
+Alisa Liu, Zhaofeng Wu, Julian Michael, Alane Suhr, Peter West, Alexander Koller,
+Swabha Swayamdipta, Noah A. Smith, and Yejin Choi.
+\newblock We're Afraid Language Models Aren't Modeling Ambiguity.
+\newblock In \emph{Proceedings of the 2023 Conference on Empirical Methods in Natural Language Processing},
+pages 790--807, Singapore, December 2023.
+Association for Computational Linguistics.
+\newblock \url{https://aclanthology.org/2023.emnlp-main.51/}
+\end{thebibliography}
+\end{document}
+
+
+% Entries for the entire Anthology, followed by custom entries
+\bibliography{anthology,custom}
+\bibliographystyle{acl_natbib}
+
+%\appendix
+
+
+
+\end{document}
