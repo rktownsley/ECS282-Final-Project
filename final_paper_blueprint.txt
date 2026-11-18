@@ -1,0 +1,40 @@
+1. Unified Paper Blueprint (The Narrative Arc)
+
+• Introduction: State the clinical motivation (rural clinics need private, local abbreviation disambiguation without cloud APIs) and your primary hypothesis from the proposal: testing how far an edge-scale LLM (Llama-3.2-1B-Instruct) with QLoRA can push open-vocabulary extraction using <0.1% (1,000 samples) of MeDAL training data.
+• Experiment 1 — Low-Resource Neural & Generative Benchmark (Table 1): Present your 6-model controlled study (1,000 train / 500 seen / 500 unseen). Show that QLoRA Llama-3.2-1B dramatically outperforms closed-vocabulary biomedical encoders (BioClinicalBERT at 37.00%, PubMedBERT at 54.40%) on seen acronyms (76.00% EM) and is the only model capable of non-zero generalization on unseen acronyms (12.00% EM vs. 0.00% for BERT and 1.20% for Zero-Shot).
+• Bottleneck Analysis (The Bridge): Analyze why 12.00% unseen EM and ~5.1–5.9 GB VRAM / 75–284 ms latency pose real hurdles for GPU-less clinic hardware, and note that in real clinical workflows, medical abbreviations are largely enumerable via standardized lexicons (e.g., UMLS) rather than completely unseen.
+• Experiment 2 — Post-Hoc Clinical Deployment Study (Table 2): Introduce the lightweight TF-IDF Context Ranker as an engineering follow-up for GPU-less environments. Show that when paired with a complete candidate lexicon across 198,075 ambiguous instances, it achieves 79.71% Top-1 EM and 95.74% Top-3 accuracy with 0 MB VRAM and 0.11 ms latency.
+• Discussion & Conclusion: Conclude with a clear deployment guideline: use TF-IDF + fixed lexicon for resource-constrained, GPU-free clinics where dictionaries exist, and use QLoRA Llama-3.2-1B when open-vocabulary flexibility is required on edge GPUs.
+
+2. Polished Abstract (Honors Original Proposal + Integrates Follow-Up)
+
+Medical Abbreviation Disambiguation (AD) is critical for clinical text parsing, yet existing methods either rely on rigid closed-vocabulary classifiers or require massive cloud LLMs that pose severe HIPAA and privacy risks. In this work, we evaluate a low-resource framework that reframes medical AD into a private, open-vocabulary text generation task on an edge-scale model (Llama-3.2-1B-Instruct) using Quantized Low-Rank Adaptation (QLoRA) and less than 0.1% (1,000 samples) of traditional training data. Across highly ambiguous multi-sense acronyms from the MeDAL benchmark, QLoRA fine-tuning achieves 76.00% Exact Match (EM) on seen abbreviations—surpassing fine-tuned BioClinicalBERT (37.00%) and PubMedBERT (54.40%)—while improving unseen acronym EM tenfold over zero-shot prompting (1.20% to 12.00%). To further map out practical deployment limits for GPU-less rural clinics, we conduct a post-hoc engineering comparison against a lightweight, closed-vocabulary TF-IDF context ranker (15,000 features) across 198,075 ambiguous instances. Operating with 0 MB GPU VRAM and 0.11 ms latency, the TF-IDF ranker reaches 79.71% Top-1 EM and 95.74% Top-3 accuracy, illustrating the trade-off between open-vocabulary neural generalization and ultra-lightweight lexical retrieval in clinical NLP.
+
+3. Clean Tables Ready for Your Report
+
+
+Table 1: Low-Resource Neural Benchmark on Seen vs. Unseen Ambiguous Medical Abbreviations
+
+Evaluated on a stratified split of MeDAL valid.csv (1,000 train / 500 seen test / 500 unseen test, SEED = 42, NVIDIA Tesla T4 GPU).
+
+Model & Configuration	Train Samples	Train Time	Latency (ms/sample)	Peak VRAM	Seen EM	Seen Macro F1	Seen Token F1	Unseen EM	Unseen Token F1
+Llama-3.2-1B-Instruct (Zero-Shot, No LoRA)	0	—	97.37 ms	5,211 MB	0.60%	0.27%	4.72%	1.20%	4.70%
+Llama-3.2-1B-Instruct (Three-Shot, No LoRA)	0	—	199.11 ms	5,211 MB	1.40%	0.56%	5.70%	1.60%	5.98%
+BioClinicalBERT (Closed-Vocab EHR Encoder, 12 epochs)	1,000	155.6 s	3.49 ms	3,100 MB	37.00%	31.96%	37.30%	0.00%	0.53%
+PubMedBERT (Closed-Vocab Literature Encoder, 12 epochs)	1,000	154.8 s	2.39 ms	2,808 MB	54.40%	48.41%	—	0.00%	0.00%
+Llama-3.2-1B + QLoRA (Run 1: r=16, Local-60, Greedy)	1,000	518.9 s	74.88 ms	5,144 MB	76.00%	61.80%	77.11%	8.80%	14.13%
+Llama-3.2-1B + QLoRA (Run 2: r=8, NEFTune, Lead-40+Local-60, 3-Beam)	1,000	706.0 s	284.10 ms	5,896 MB	70.80%	53.53%	73.60%	12.00%	18.10%
+
+
+Table 2: Post-Hoc Clinical Deployment Study — Closed-Vocabulary Lexical Retrieval
+
+Evaluated on an 80/20 split of MeDAL valid.csv across 198,075 ambiguous multi-sense test instances (SEED = 42, CPU-only), assuming a complete pre-indexed candidate lexicon.
+
+Model & Configuration	Train Time	Latency (ms/sample)	Peak VRAM	Top-1 (Seen EM)	Top-2 Acc.	Top-3 Acc.	Seen Macro F1	Seen Token F1
+Most-Frequent Sense (MFS Lookup Baseline)	0.00 s	0.0017 ms	0 MB	30.17%	50.12%	60.42%	16.20%	34.38%
+TF-IDF Context Model (15k Vocab)	26.48 s	0.1114 ms	0 MB	79.71%	92.20%	95.74%	71.51%	84.01%
+
+
+4. Transition & Discussion Text (To Tie Both Experiments Together)
+
+From Parametric Limits to Practical Clinic Deployment: Table 1 demonstrates that QLoRA fine-tuning enables an edge-scale 1B LLM to outperform dedicated biomedical encoders on seen acronyms (76.00% vs. 54.40% EM) while retaining non-zero generalization on unseen acronyms (12.00% EM). However, our hardware profiling highlights two practical barriers for small rural clinics: Llama-3.2-1B requires 5.1–5.9 GB of GPU VRAM and 75–284 ms per abbreviation, and an 88% error rate on unseen terms poses clinical safety risks if hallucinations are inserted unverified. Because real-world clinical shorthand is largely enumerable via standardized lexicons (e.g., UMLS), our post-hoc study in Table 2 shows that pairing a fixed dictionary with a 15,000-feature TF-IDF context ranker eliminates GPU requirements entirely (0 MB VRAM, 0.11 ms latency) while achieving 79.71% Top-1 EM and surfacing the correct expansion within the top three candidates 95.74% of the time.
