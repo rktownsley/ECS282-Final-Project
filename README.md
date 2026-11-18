@@ -10,7 +10,9 @@ The primary generative model is `unsloth/Llama-3.2-1B-Instruct`, adapted with 4-
 - `02_baseline_bioclinicalbert_closed_vocab.ipynb` — BioClinicalBERT classifier baseline.
 - `03_baseline_pubmedbert_closed_vocab.ipynb` — PubMedBERT classifier baseline.
 - `04_main_llama3_2_1b_qlora_r16_greedy.ipynb` — primary QLoRA experiment with rank 16 and greedy decoding.
-- `05_ablation_llama3_2_1b_qlora_r8_neftune_leadctx.ipynb` — rank-8 QLoRA ablation with NEFTune, lead-plus-local context, and beam decoding.
+- `05a_ablation_llama3_2_1b_qlora_r8.ipynb` — rank ablation using rank-8 QLoRA with local context and greedy decoding.
+- `05b_ablation_llama3_2_1b_neftune.ipynb` — regularization ablation using rank-16 QLoRA with NEFTune.
+- `05_ablation_llama3_2_1b_qlora_r8_neftune_leadctx.ipynb` — combined ablation with rank-8 QLoRA, NEFTune, lead-plus-local context, and beam decoding.
 - `TF-IDF_eval_metrics.py` — TF–IDF retrieval evaluation with top-1, top-2, top-3, and F1 metrics.
 - `TF-IDF_and_MFS_baseline.py` — compact TF–IDF and most-frequent-sense baseline script.
 - `results-2.txt` — detailed benchmark results, including latency and peak VRAM.
@@ -46,12 +48,15 @@ Each notebook installs its own dependencies, including `transformers`, `datasets
 The standalone TF–IDF scripts can be run locally from the repository after placing `valid.csv` in the project directory:
 
 ```bash
+python -m pip install numpy pandas scikit-learn
 python TF-IDF_eval_metrics.py
 ```
 
+Use `TF-IDF_and_MFS_baseline.py` for the shorter top-1 comparison. The neural notebooks should be run in Colab because they require GPU-backed model loading and fine-tuning.
+
 ## Method
 
-Each neural-model example marks the target abbreviation in context and asks the model to return only its expansion. The primary QLoRA run uses 4-bit NF4 quantization, rank-16 adapters, a learning rate of `2e-4`, three epochs, and an effective batch size of 16. The rank-8 ablation uses NEFTune, a lead-plus-local context window, and three-beam decoding. Evaluation reports exact match, macro F1, and token-level F1 separately for seen and unseen abbreviations.
+Each neural-model example marks the target abbreviation in context and asks the model to return only its expansion. The primary QLoRA run uses 4-bit NF4 quantization, rank-16 adapters, a learning rate of `2e-4`, three epochs, and an effective batch size of 16. The ablations separately test rank reduction (`05a`), NEFTune regularization (`05b`), and the combined rank/context/beam configuration (`05`). Evaluation reports exact match, macro F1, and token-level F1 separately for seen and unseen abbreviations.
 
 ## Results
 
@@ -64,11 +69,13 @@ All neural-model rows below use the same `1,000 / 500 / 500` split, seed `42`, a
 | BioClinicalBERT | 37.00% | 31.96% | 0.00% | 0.53% |
 | PubMedBERT | 54.40% | 48.41% | 0.00% | 0.00% |
 | Llama + QLoRA, rank 16 | **76.00%** | **61.80%** | 8.80% | 14.13% |
-| Llama + QLoRA, rank 8 ablation | 70.80% | 53.53% | **12.00%** | **18.10%** |
+| Llama + QLoRA, rank 8 (`05a`) | 74.80% | 60.49% | 8.20% | 14.01% |
+| Llama + QLoRA + NEFTune (`05b`) | 74.00% | 60.45% | 10.00% | 16.17% |
+| Llama + QLoRA, rank 8 + NEFTune + context/beam (`05`) | 70.80% | 53.53% | **12.00%** | **18.10%** |
 
 The separate lexical benchmark reports 30.17% top-1 accuracy for the most-frequent-sense baseline and 79.71% top-1 accuracy for TF–IDF on its larger ambiguous test set. These scores are not directly comparable to the neural benchmark because the data split and evaluation set differ.
 
-Overall, QLoRA substantially improves in-domain abbreviation expansion. Generalization to acronyms excluded from training remains considerably harder, although the rank-8 ablation improves unseen-acronym performance.
+Overall, QLoRA substantially improves in-domain abbreviation expansion. The rank-8 and NEFTune ablations provide modest unseen-acronym gains, while the combined context-and-beam configuration achieves the strongest unseen performance at the cost of lower seen performance and higher inference latency.
 
 ## Reproducibility notes
 
