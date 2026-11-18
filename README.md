@@ -1,53 +1,61 @@
 # Open-Vocabulary Medical Abbreviation Disambiguation
 
-This project evaluates whether a small, locally runnable language model can expand ambiguous medical abbreviations from clinical and biomedical context. It compares prompted and parameter-efficient generative models with closed-vocabulary BERT baselines.
+This project evaluates whether a small, locally runnable language model can expand ambiguous medical abbreviations from clinical and biomedical context. It compares prompted and parameter-efficient generative models with closed-vocabulary BERT and lexical-retrieval baselines.
 
-The main generative model is `unsloth/Llama-3.2-1B-Instruct`, adapted with 4-bit QLoRA. The experiments use deterministic decoding and require the model to output only the canonical expansion string.
+The primary generative model is `unsloth/Llama-3.2-1B-Instruct`, adapted with 4-bit QLoRA. The experiments use deterministic decoding and require the model to output only the canonical expansion string.
 
 ## Repository contents
 
 - `01_baseline_llama3_2_1b_prompting.ipynb` — zero-shot and three-shot Llama baselines.
 - `02_baseline_bioclinicalbert_closed_vocab.ipynb` — BioClinicalBERT classifier baseline.
 - `03_baseline_pubmedbert_closed_vocab.ipynb` — PubMedBERT classifier baseline.
-- `04_main_llama3_2_1b_qlora_r16_greedy.ipynb` — primary QLoRA experiment with greedy decoding.
-- `05_ablation_llama3_2_1b_qlora_r8_neftune_leadctx.ipynb` — QLoRA ablation using a different rank, context, NEFTune, and beam decoding.
-- `results.txt` — consolidated benchmark table.
+- `04_main_llama3_2_1b_qlora_r16_greedy.ipynb` — primary QLoRA experiment with rank 16 and greedy decoding.
+- `05_ablation_llama3_2_1b_qlora_r8_neftune_leadctx.ipynb` — rank-8 QLoRA ablation with NEFTune, lead-plus-local context, and beam decoding.
+- `TF-IDF_eval_metrics.py` — TF–IDF retrieval evaluation with top-1, top-2, top-3, and F1 metrics.
+- `TF-IDF_and_MFS_baseline.py` — compact TF–IDF and most-frequent-sense baseline script.
+- `results-2.txt` — detailed benchmark results, including latency and peak VRAM.
 - `proposal.txt` — project proposal and methodology description.
 
 ## Dataset
 
-Download `valid.csv` from the [MeDAL dataset](https://zenodo.org/records/4482922) and place it in Google Drive. The notebooks expect it at:
+Download `valid.csv` from the [MeDAL dataset](https://zenodo.org/records/4482922) and place it in Google Drive. The notebooks expect:
 
 ```text
 /content/drive/MyDrive/valid.csv
 ```
 
-The notebooks read the first 300,000 rows, retain valid `TEXT`, `LOCATION`, and `LABEL` records, and filter for genuinely ambiguous acronyms. With seed `42`, the final benchmark uses:
+The neural-model notebooks read the first 300,000 rows, remove invalid records, retain genuinely ambiguous acronyms, and keep labels with at least 30 examples. The 40 most frequent ambiguous acronyms are split into 30 seen and 10 unseen acronyms using seed `42`. The shared in-memory benchmark contains:
 
 - 1,000 training examples
 - 500 seen-acronym test examples
 - 500 unseen-acronym test examples
 
-The same in-memory split is used for the baseline and fine-tuned comparisons.
+The TF–IDF/MFS evaluation uses the full `valid.csv`, creates an 80/20 sentence split, and evaluates on 198,075 ambiguous test examples.
 
 ## Running the experiments
 
-These notebooks are designed for Google Colab with a GPU runtime. A single NVIDIA T4 with 16 GB VRAM is the expected environment.
+The notebooks are designed for Google Colab with a GPU runtime; an NVIDIA T4 with 16 GB VRAM is the expected environment.
 
 1. Open a notebook in Google Colab.
 2. Select a GPU runtime.
 3. Upload `valid.csv` to the Google Drive location above.
-4. Run the notebook from top to bottom.
+4. Run the notebooks from top to bottom.
 
-Each notebook installs its own Python dependencies, including `transformers`, `datasets`, `accelerate`, `peft`, `bitsandbytes`, and `scikit-learn` where needed. Run the notebooks in numeric order to reproduce the progression from prompting baselines through QLoRA experiments. Model downloads require an internet connection; Hugging Face authentication may be needed if the selected model repository requests it.
+Each notebook installs its own dependencies, including `transformers`, `datasets`, `accelerate`, `peft`, `bitsandbytes`, and `scikit-learn` where needed. Run the notebooks in numeric order to reproduce the neural-model progression. Model downloads require an internet connection, and Hugging Face authentication may be needed if a selected model repository requires it.
+
+The standalone TF–IDF scripts can be run locally from the repository after placing `valid.csv` in the project directory:
+
+```bash
+python TF-IDF_eval_metrics.py
+```
 
 ## Method
 
-For each example, the target abbreviation is marked in context and the model is prompted to return only its expansion. The main QLoRA run uses 4-bit NF4 quantization, rank-16 adapters, a learning rate of `2e-4`, three epochs, and an effective batch size of 16. Evaluation reports exact match, macro F1, and token-level F1 separately for seen and unseen abbreviations.
+Each neural-model example marks the target abbreviation in context and asks the model to return only its expansion. The primary QLoRA run uses 4-bit NF4 quantization, rank-16 adapters, a learning rate of `2e-4`, three epochs, and an effective batch size of 16. The rank-8 ablation uses NEFTune, a lead-plus-local context window, and three-beam decoding. Evaluation reports exact match, macro F1, and token-level F1 separately for seen and unseen abbreviations.
 
-## Reported benchmark
+## Results
 
-The consolidated results in `results.txt` were measured on the same split using an NVIDIA T4:
+All neural-model rows below use the same `1,000 / 500 / 500` split, seed `42`, and T4 runtime. See [`results-2.txt`](results-2.txt) for the complete tables.
 
 | Model | Seen EM | Seen Macro F1 | Unseen EM | Unseen Token F1 |
 | --- | ---: | ---: | ---: | ---: |
@@ -58,11 +66,13 @@ The consolidated results in `results.txt` were measured on the same split using 
 | Llama + QLoRA, rank 16 | **76.00%** | **61.80%** | 8.80% | 14.13% |
 | Llama + QLoRA, rank 8 ablation | 70.80% | 53.53% | **12.00%** | **18.10%** |
 
-The results suggest that QLoRA substantially improves in-domain abbreviation expansion, while performance on acronyms excluded from training remains considerably harder.
+The separate lexical benchmark reports 30.17% top-1 accuracy for the most-frequent-sense baseline and 79.71% top-1 accuracy for TF–IDF on its larger ambiguous test set. These scores are not directly comparable to the neural benchmark because the data split and evaluation set differ.
+
+Overall, QLoRA substantially improves in-domain abbreviation expansion. Generalization to acronyms excluded from training remains considerably harder, although the rank-8 ablation improves unseen-acronym performance.
 
 ## Reproducibility notes
 
-Results depend on the exact dataset file, the first 300,000 rows read by the notebooks, random seed `42`, model revisions, and the available GPU. The notebooks keep temporary checkpoints in the Colab runtime and do not write checkpoints to Google Drive.
+Results depend on the exact dataset file, the rows read by the notebooks, seed `42`, model revisions, and the available GPU. Neural notebooks keep temporary checkpoints in the Colab runtime and do not write checkpoints to Google Drive.
 
 ## Authors
 
