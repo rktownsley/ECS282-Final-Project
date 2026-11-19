@@ -13,10 +13,10 @@ PubMedBERT (Closed-Vocab Literature Encoder, 12 epochs)	Encoder Baseline	154.8 s
 Llama-3.2-1B + QLoRA (r=16, Local-60, Greedy)	Primary Model	518.9 s	74.88 ms	5,144 MB	76.00%	61.80%	77.11%	8.80%	14.13%
 Llama-3.2-1B + QLoRA (r=8, Local-60, Greedy)	Ablation (Rank)	491.3 s	82.84 ms	5,058 MB	74.80%	60.49%	75.67%	8.20%	14.01%
 Llama-3.2-1B + QLoRA (r=16 + NEFTune, Local-60, Greedy)	Ablation (Noise Reg.)	511.0 s	72.27 ms	5,158 MB	74.00%	60.45%	75.35%	10.00%	16.17%
+Llama-3.2-1B + QLoRA (r=16, Lead-40+Local-60, Greedy)	Ablation (Context)	521.3 s	78.82 ms	5,144 MB	71.80%	57.13%	73.19%	9.40%	14.07%
+Llama-3.2-1B + QLoRA (r=16, Local-60, 3-Beam)	Ablation (Beam)	565.8 s	254.23 ms	7,023 MB	77.00%	65.76%	77.83%	10.60%	16.11%
+Llama-3.2-1B + QLoRA (r=16 + NEFTune, Local-60, 3-Beam)	Ablation (Noise+Beam)	492.0 s	224.06 ms	7,023 MB	76.40%	65.00%	77.63%	12.20%	17.63%
 Llama-3.2-1B + QLoRA (r=8 + NEFTune, Lead-40+Local-60, 3-Beam)	Ablation (Context+Beam)	706.0 s	284.10 ms	5,896 MB	70.80%	53.53%	73.60%	12.00%	18.10%
-
-
-
 
 
 
