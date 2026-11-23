@@ -13,6 +13,7 @@ The primary generative model is `unsloth/Llama-3.2-1B-Instruct`, adapted with 4-
 - `05a_ablation_llama3_2_1b_qlora_r8.ipynb` — rank ablation using rank-8 QLoRA with local context and greedy decoding.
 - `05b_ablation_llama3_2_1b_neftune.ipynb` — regularization ablation using rank-16 QLoRA with NEFTune.
 - `05_ablation_llama3_2_1b_qlora_r8_neftune_leadctx.ipynb` — combined ablation with rank-8 QLoRA, NEFTune, lead-plus-local context, and beam decoding.
+- `06_improve_unseen_diverse_reg_fullctx.ipynb` — unseen-acronym experiments, each behind a flag: training on 1,000 examples spread across ~275 acronyms (`DIVERSE_TRAIN`), regularization with early stopping on held-out dev acronyms (`REGULARIZED`), and whole-abstract context (`CONTEXT_MODE`). Uses the same seen/unseen test sets as 01–05.
 - `TF-IDF_eval_metrics.py` — TF–IDF retrieval evaluation with top-1, top-2, top-3, and F1 metrics.
 - `TF-IDF_and_MFS_baseline.py` — compact TF–IDF and most-frequent-sense baseline script.
 - `results-2.txt` — detailed benchmark results, including latency and peak VRAM.
@@ -78,6 +79,8 @@ The separate lexical benchmark reports 30.17% top-1 accuracy for the most-freque
 Overall, QLoRA substantially improves in-domain abbreviation expansion. The rank-8 and NEFTune ablations provide modest unseen-acronym gains, while the combined context-and-beam configuration achieves the strongest unseen performance at the cost of lower seen performance and higher inference latency.
 
 ## Reproducibility notes
+
+**Prompt-construction fix (01, 04, 05, 05a, 05b).** Earlier versions truncated the tokenized prompt from the right and added a second `<|begin_of_text|>` at evaluation time. Measured on MeDAL abstracts with the Llama 3.2 tokenizer, the cut removed the `Expansion:` line and the assistant header from about 34% of training prompts in 04/05a/05b (224-token budget), about 12% in 05, and about 46% of three-shot prompts in 01. The notebooks now leave room for full prompts, narrow the word window if a prompt is still too long, and never add special tokens on top of the chat template. The result tables above come from the earlier versions and should be regenerated.
 
 Results depend on the exact dataset file, the rows read by the notebooks, seed `42`, model revisions, and the available GPU. Neural notebooks keep temporary checkpoints in the Colab runtime and do not write checkpoints to Google Drive.
 
